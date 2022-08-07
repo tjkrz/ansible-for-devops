@@ -5,6 +5,8 @@ __pycache__
 *.cache
 *.retry
 test.sh
+inventory
+ansible.cfg
 
 */roles/geerlingguy.*
 */provisioning/roles/geerlingguy.*

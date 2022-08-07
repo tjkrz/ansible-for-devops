@@ -6,6 +6,18 @@
     - name: restart ssh
       service: name=sshd state=restarted
 
+  pre_tasks:
+    - name: Ensure all packages are up to date (Debian)
+      apt:
+        upgrade: dist
+        update_cache: yes
+        when: ansible_os_family == 'Debian'
+    - name: Ensure all packages are up to date (Ubuntu)
+      yum:
+        name: '*'
+        latest: yes
+        when: ansible_os_family == 'RedHat'
+
   tasks:
     # Use secure and encrypted communication.
     - name: Allow sshd to listen on tcp port 2849.
@@ -35,15 +47,15 @@
     # User account configuration.
     - name: Add a deployment user.
       user:
-        name: johndoe
+        name: deploy
         state: present
 
     # Disable root login and use `sudo`.
     - name: Add sudo rights for deployment user.
       lineinfile:
         dest: /etc/sudoers
-        regexp: '^johndoe'
-        line: 'johndoe ALL=(ALL) NOPASSWD: ALL'
+        regexp: '^deploy'
+        line: 'deploy ALL=(ALL) NOPASSWD: ALL'
         state: present
         validate: 'visudo -cf %s'
 
@@ -54,6 +66,7 @@
           - nano
           - sendmail
         state: absent
+        purge: yes
 
     # File permissions.
     - name: Configure the permissions for the messages log.
@@ -68,12 +81,14 @@
       yum:
         name: dnf-automatic
         state: present
+      when: ansible_os_family == 'RedHat'
 
     - name: Ensure dnf-automatic is running and enabled on boot.
       service:
         name: dnf-automatic-install.timer
         state: started
         enabled: yes
+      when: ansible_os_family == 'RedHat'
 
     # Automating updates for Debian systems.
     - name: Install unattended upgrades package.
@@ -99,6 +114,7 @@
       service:
         name: firewalld
         state: started
+      when: ansible_os_family == 'RedHat'
 
     - name: Configure open ports with firewalld.
       firewalld:
@@ -108,10 +124,33 @@
         immediate: yes
         permanent: yes
       with_items:
-        - { state: 'enabled', port: '22/tcp' }
+        - { state: 'enabled', port: '2849/tcp' }
         - { state: 'enabled', port: '80/tcp' }
         - { state: 'enabled', port: '123/udp' }
+      when: ansible_os_family == 'RedHat'
 
+    - name: UFW - enabling UFW, allowing all traffic
+      community.general.ufw:
+        state: enabled
+        policy: allow
+      when: ansible_os_family == 'Debian'  
+
+    - name: UFW - Set logging
+      community.general.ufw:
+        logging: 'on'
+      when: ansible_os_family == 'Debian'  
+
+    - name: UFW - Allow all access to tcp port 80
+      ufw:
+        rule: "{{ item.state }}"
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      with_items:
+        - { state: 'allow', port: '22', proto: tcp }
+        - { state: 'allow', port: '80', proto: tcp }
+        - { state: 'allow', port: '123', proto: udp }        
+      when: ansible_os_family == 'Debian'  
+    
     # Monitor logins and block suspect IP addresses.
     - name: Ensure EPEL repo is present.
       yum:
